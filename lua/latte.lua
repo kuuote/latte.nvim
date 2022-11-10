@@ -1,7 +1,13 @@
+---@class SavedState
+---@field public mode string
+---@field public cursor integer[]
+
 local M = {}
 
 local tmpl = {}
 
+---@param filetype string
+---@param force boolean
 function M.load(filetype, force)
   if tmpl[filetype] ~= nil and not force then
     return
@@ -15,10 +21,13 @@ function M.load(filetype, force)
   end
 end
 
-function M.open(name, force)
-  local mode = vim.fn.mode()
-  local cursor = vim.fn.getcurpos()
-  table.remove(cursor, 1)
+---@param name string
+---@param force boolean
+---@param state SavedState
+function M.open(name, force, state)
+  local mode = state and state.mode or vim.fn.mode()
+  local cursor = state and state.cursor or vim.fn.getcurpos()
+  table.remove(cursor, 1) -- remove unnecessary 0
   vim.cmd('stopinsert')
 
   local ft = vim.o.filetype
@@ -94,6 +103,26 @@ function M.open(name, force)
   })
 
   vim.api.nvim_buf_set_lines(params_buf, 0, -1, true, vim.split(template.params, '\n'))
+end
+
+---@param force boolean
+function M.find(force)
+  ---@type SavedState
+  local state = {
+    mode = vim.fn.mode(),
+    cursor = vim.fn.getcurpos(),
+  }
+  ---@type string
+  local ft = vim.o.filetype
+  M.load(ft, force)
+  vim.ui.select(vim.tbl_keys(tmpl[ft]), {
+    prompt = 'Select template',
+  }, function(choice)
+    if choice == nil then
+      return
+    end
+    M.open(choice, false, state)
+  end)
 end
 
 return M
