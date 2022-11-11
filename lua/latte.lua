@@ -2,9 +2,63 @@
 ---@field public mode string
 ---@field public cursor integer[]
 
+---@return SavedState
+local function get_state()
+  return {
+    mode = vim.api.nvim_get_mode().mode,
+    cursor = vim.api.nvim_win_get_cursor(0),
+  }
+end
+
+---@param result string[]
+---@param state SavedState
+local function insert(result, state)
+  local save_virtualedit = vim.wo.virtualedit
+  local save_reg = vim.fn.getreginfo('z')
+
+  if state.mode == 'n' then
+    vim.fn.setreg('z', result, 'V')
+    vim.cmd('normal! "z]p')
+  elseif state.mode == 'i' then
+    local indent = vim.api.nvim_get_current_line():match('^%s*')
+    local indented = vim.list_extend(
+      { result[1] },
+      vim.tbl_map(function(line)
+        return indent .. line
+      end, vim.list_slice(result, 2))
+    )
+    vim.fn.setreg('z', indented, 'v')
+    vim.wo.virtualedit = 'all'
+    vim.api.nvim_win_set_cursor(0, state.cursor)
+    vim.cmd('normal! "zgP')
+    local line = state.cursor[1]
+    vim.cmd(('%d,%dretab!'):format(line, line + #result - 1))
+    vim.cmd('startinsert')
+  end
+
+  vim.fn.setreg('z', save_reg)
+  vim.wo.virtualedit = save_virtualedit
+end
+
+---@param template unknown
+---@param params_text string
+---@return boolean, string
+local function render(template, params_text)
+  local ok, result = pcall(function()
+    local fn = loadstring(params_text)
+    local params = fn()
+    return template.render(params)
+  end)
+  return ok, result
+end
+
 local M = {}
 
 local tmpl = {}
+
+function M.get_cursor_string()
+  return '__latte_cursor__'
+end
 
 ---@param filetype string
 ---@param force boolean
@@ -23,17 +77,14 @@ end
 
 ---@param name string
 ---@param force boolean
----@param state SavedState
+---@param state SavedState | nil
 function M.open(name, force, state)
-  local mode = state and state.mode or vim.fn.mode()
-  local cursor = state and state.cursor or vim.fn.getcurpos()
-  table.remove(cursor, 1) -- remove unnecessary 0
-  vim.cmd('stopinsert')
+  state = state or get_state()
 
-  local ft = vim.o.filetype
+  local ft = vim.bo.filetype
   M.load(ft, force)
   if not tmpl[ft][name] then
-    error('template not found')
+    error('template not found: ' .. name)
   end
   local template = tmpl[ft][name]
 
@@ -73,11 +124,7 @@ function M.open(name, force, state)
   vim.api.nvim_create_autocmd({ 'TextChanged', 'TextChangedI', 'TextChangedP' }, {
     buffer = params_buf,
     callback = function()
-      local ok, result = pcall(function()
-        local fn = loadstring(table.concat(vim.api.nvim_buf_get_lines(params_buf, 0, -1, false), '\n'))
-        local params = fn()
-        return template.render(params)
-      end)
+      local ok, result = render(template, table.concat(vim.api.nvim_buf_get_lines(params_buf, 0, -1, false), '\n'))
       if not ok then
         return
       end
@@ -86,39 +133,41 @@ function M.open(name, force, state)
   })
 
   vim.keymap.set('n', '<CR>', function()
-    local result = vim.api.nvim_buf_get_lines(render_buf, 0, -1, false)
+    local ok, result = render(template, table.concat(vim.api.nvim_buf_get_lines(params_buf, 0, -1, false), '\n'))
+    if not ok then
+      vim.api.nvim_echo({{'params evaluation failed\n', 'ErrorMsg'},{result, 'ErrorMsg'}}, true, {})
+      return
+    end
     vim.api.nvim_win_close(params_win, true)
     vim.api.nvim_win_close(render_win, true)
-    if mode == 'i' then
-      vim.cmd('startinsert')
-      vim.fn.cursor(cursor)
-      vim.g['latte#result'] = table.concat(result, '\n')
-      vim.fn.feedkeys(vim.api.nvim_replace_termcodes('<C-R>=g:latte#result<CR>', true, true, true), 'n')
-    else
-      vim.fn.append(vim.fn.line('.'), result)
-      vim.cmd('normal! j^')
-    end
+    insert(vim.split(result, '\n'), state)
   end, {
     buffer = params_buf,
   })
 
   vim.api.nvim_buf_set_lines(params_buf, 0, -1, true, vim.split(template.params, '\n'))
+  vim.fn.timer_start(0, function()
+    -- なぜか挿入モードが解除されないのでタイマーで発動
+    vim.cmd('stopinsert')
+    vim.api.nvim_win_set_cursor(0, {1, 0})
+  end)
 end
 
 ---@param force boolean
 function M.find(force)
   ---@type SavedState
-  local state = {
-    mode = vim.fn.mode(),
-    cursor = vim.fn.getcurpos(),
-  }
+  local state = get_state()
   ---@type string
-  local ft = vim.o.filetype
+  local ft = vim.bo.filetype
   M.load(ft, force)
   vim.ui.select(vim.tbl_keys(tmpl[ft]), {
     prompt = 'Select template',
   }, function(choice)
     if choice == nil then
+      if state.mode == 'i' then
+        vim.cmd('startinsert')
+      end
+      vim.api.nvim_win_set_cursor(0, state.cursor)
       return
     end
     M.open(choice, false, state)
