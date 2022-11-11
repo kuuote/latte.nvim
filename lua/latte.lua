@@ -91,9 +91,7 @@ function M.open(name, force, state)
   local params_buf = vim.api.nvim_create_buf(false, true)
   local render_buf = vim.api.nvim_create_buf(false, true)
 
-  local border = vim.tbl_map(function(c)
-    return { c, 'Normal' }
-  end, { '.', '.', '.', ':', ':', '.', ':', ':' })
+  local border = 'single'
   local row = math.floor(vim.go.lines / 8)
   local col = math.floor(vim.go.columns / 8)
   local height = math.floor(vim.go.lines - (vim.go.lines / 4))
@@ -118,8 +116,8 @@ function M.open(name, force, state)
   })
 
   vim.api.nvim_buf_set_option(params_buf, 'filetype', 'lua')
-  vim.api.nvim_win_set_option(params_win, 'winhighlight', 'NormalFloat:Normal')
-  vim.api.nvim_win_set_option(render_win, 'winhighlight', 'NormalFloat:Normal')
+  vim.api.nvim_win_set_option(params_win, 'winhighlight', 'NormalFloat:Normal,FloatBorder:Normal')
+  vim.api.nvim_win_set_option(render_win, 'winhighlight', 'NormalFloat:Normal,FloatBorder:Normal')
 
   vim.api.nvim_create_autocmd({ 'TextChanged', 'TextChangedI', 'TextChangedP' }, {
     buffer = params_buf,
