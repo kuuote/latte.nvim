@@ -1,3 +1,8 @@
+---@return string
+local function get_cursor_marker()
+  return '__latte_cursor__'
+end
+
 ---@class SavedState
 ---@field public mode string
 ---@field public cursor integer[]
@@ -10,29 +15,36 @@ local function get_state()
   }
 end
 
----@param result string[]
+---@param result string
 ---@param state SavedState
 local function insert(result, state)
+  local lines = vim.split(result, '\n')
   local save_virtualedit = vim.wo.virtualedit
   local save_reg = vim.fn.getreginfo('z')
+  local marker = get_cursor_marker()
+  local has_cursor = result:match(marker) ~= nil
 
   if state.mode == 'n' then
-    vim.fn.setreg('z', result, 'V')
+    vim.fn.setreg('z', lines, 'V')
     vim.cmd('normal! "z]p')
   elseif state.mode == 'i' then
     local indent = vim.api.nvim_get_current_line():match('^%s*')
     local indented = vim.list_extend(
-      { result[1] },
+      { lines[1] },
       vim.tbl_map(function(line)
         return indent .. line
-      end, vim.list_slice(result, 2))
+      end, vim.list_slice(lines, 2))
     )
     vim.fn.setreg('z', indented, 'v')
     vim.wo.virtualedit = 'all'
     vim.api.nvim_win_set_cursor(0, state.cursor)
     vim.cmd('normal! "zgP')
     local line = state.cursor[1]
-    vim.cmd(('%d,%dretab!'):format(line, line + #result - 1))
+    vim.cmd(('%d,%dretab!'):format(line, line + #lines - 1))
+    if has_cursor then
+      vim.fn.search(marker, 'b')
+      vim.cmd('normal! "_d' .. #marker .. 'l')
+    end
     vim.cmd('startinsert')
   end
 
@@ -46,19 +58,18 @@ end
 local function render(template, params_text)
   local ok, result = pcall(function()
     local fn = loadstring(params_text)
+    ---@diagnostic disable-next-line: need-check-nil
     local params = fn()
     return template.render(params)
   end)
   return ok, result
 end
 
-local M = {}
+local M = {
+  get_cursor_marker = get_cursor_marker,
+}
 
 local tmpl = {}
-
-function M.get_cursor_string()
-  return '__latte_cursor__'
-end
 
 ---@param filetype string
 ---@param force boolean
@@ -126,19 +137,19 @@ function M.open(name, force, state)
       if not ok then
         return
       end
-      vim.api.nvim_buf_set_lines(render_buf, 0, -1, true, vim.split(result, '\n'))
+      vim.api.nvim_buf_set_lines(render_buf, 0, -1, true, vim.split(result:gsub(get_cursor_marker(), '|'), '\n'))
     end,
   })
 
   vim.keymap.set('n', '<CR>', function()
     local ok, result = render(template, table.concat(vim.api.nvim_buf_get_lines(params_buf, 0, -1, false), '\n'))
     if not ok then
-      vim.api.nvim_echo({{'params evaluation failed\n', 'ErrorMsg'},{result, 'ErrorMsg'}}, true, {})
+      vim.api.nvim_echo({ { 'params evaluation failed\n', 'ErrorMsg' }, { result, 'ErrorMsg' } }, true, {})
       return
     end
     vim.api.nvim_win_close(params_win, true)
     vim.api.nvim_win_close(render_win, true)
-    insert(vim.split(result, '\n'), state)
+    insert(result, state)
   end, {
     buffer = params_buf,
   })
@@ -147,7 +158,7 @@ function M.open(name, force, state)
   vim.fn.timer_start(0, function()
     -- なぜか挿入モードが解除されないのでタイマーで発動
     vim.cmd('stopinsert')
-    vim.api.nvim_win_set_cursor(0, {1, 0})
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
   end)
 end
 
