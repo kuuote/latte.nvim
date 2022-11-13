@@ -41,10 +41,12 @@ local function insert(result, state)
     vim.cmd('normal! "zgP')
     local line = state.cursor[1]
     vim.cmd(('%d,%dretab!'):format(line, line + #lines - 1))
-    if has_cursor then
-      vim.fn.search(marker, 'b')
-      vim.cmd('normal! "_d' .. #marker .. 'l')
-    end
+  end
+  if has_cursor then
+    vim.fn.search(marker, 'b')
+    vim.cmd('normal! "_d' .. #marker .. 'l')
+  end
+  if state.mode == 'i' then
     vim.cmd('startinsert')
   end
 
