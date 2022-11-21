@@ -157,6 +157,10 @@ function M.open(name, force, state)
   })
 
   vim.api.nvim_buf_set_lines(params_buf, 0, -1, true, vim.split(template.params, '\n'))
+  vim.api.nvim_exec_autocmds('User', {
+    pattern = 'latte#open',
+    modeline = false,
+  })
   vim.fn.timer_start(0, function()
     -- なぜか挿入モードが解除されないのでタイマーで発動
     vim.cmd('stopinsert')
