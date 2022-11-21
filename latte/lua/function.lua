@@ -4,8 +4,7 @@ return {
       [[
 %sfunction%s(%s)
 	%s
-end
-]],
+end]],
       params.is_local and 'local ' or '',
       params.name == '' and '' or ' ' .. params.name,
       params.args,
@@ -17,6 +16,5 @@ return {
   is_local = false,
   name = '',
   args = '',
-}
-]],
+}]],
 }
